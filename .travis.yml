@@ -1,0 +1,8 @@
+language: minimal
+
+services:
+  - docker
+
+script:
+  - docker image build -t argovis/ifremer-parse:dev .
+  - docker container run -d argovis/ifremer-parse:dev nosetests tests/tests.py
