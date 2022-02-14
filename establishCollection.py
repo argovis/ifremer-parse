@@ -1,3 +1,6 @@
+# usage: python establishCollection.py
+# creates an empty, unindexed collection in the argo db with schema validation enforcement
+
 from pymongo import MongoClient
 import sys
 
