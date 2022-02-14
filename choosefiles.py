@@ -1,3 +1,6 @@
+# usage: python choosefiles.py
+# assumes rsync populated content under /ifremer
+
 import os, glob, re, random
 import util.helpers as h
 

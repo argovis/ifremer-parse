@@ -1,6 +1,7 @@
 # usage: python translateProfile.py <absolute path to Argo netcdf file>
 # populates mongodb argo/profilesx with the contents of the provided file
 # assumes establishCollection.py was run first to create the collection with schema enforcement
+# assumes rsync populated content under /ifremer, same as choosefiles.py
 
 import sys, pymongo, xarray, re, datetime, difflib
 
@@ -70,10 +71,16 @@ for i in range(n_prof):
 
     ## data_keys_source: TODO
 
-    ## source
-    if prefix in ['R', 'D']:
+    ## source TODO: argo_deep?
+	if prefix in ['R', 'D']:
+		p['source'] = ['argo_core']
+	elif prefix in ['BR', 'BD']:
+		p['source'] = ['argo_bgc']
+	elif prefix in ['SR', 'SD']:
+		p['source'] = ['argo_bgc', 'argo_core'] # TODO check if this is the intended interpretation
 
-    ## source_url: TODO
+    ## source_url
+	p['source_url'] = 'ftp://ftp.ifremer.fr/ifremer/argo/dac/' + sys.argv[1][9:]
 
     ## timestamp: TODO make sure this doesn't get mangled on insertion
 	p['timestamp'] = data['JULD'].to_dict()['data'][i]
@@ -109,14 +116,16 @@ for i in range(n_prof):
 	## cycle_number
 	p['cycle_number'] = data['CYCLE_NUMBER'].to_dict()['data'][i]
 
-	## fleetmonitoring: TODO
-
-	## oceanops: TODO
-
 	## data_key_mode: TODO, only applies to BGC via PARAMETERT_DATA_MODE
 
 	## platform_wmo_number
 	p['platform_wmo_number'] = int(data['PLATFORM_NUMBER'].to_dict()['data'][i].decode('UTF-8'))
+
+	## fleetmonitoring TODO: drop? redundant with platform_wmo_number
+	p['fleetmonitoring'] = 'https://fleetmonitoring.euro-argo.eu/float/' + str(p['platform_wmo_number'])
+
+    ## oceanops TODO: drop? redundant with platform_wmo_number
+	p['oceanops'] = 'https://www.ocean-ops.org/board/wa/Platform?ref=' + str(p['platform_wmo_number'])
 
 	## platform_type
 	if('PLATFORM_TYPE') in datakeys:
