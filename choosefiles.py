@@ -1,7 +1,7 @@
 # usage: python choosefiles.py
 # assumes rsync populated content under /ifremer
 
-import os, glob, re, random
+import os, glob, re
 import util.helpers as h
 
 REprefix = re.compile('^[A-Z]*')                 # SD, SR, BD, BR, D or R
@@ -27,7 +27,7 @@ for dac in dacs:
             pfilenames = [ x.split('/')[-1] for x in glob.glob(folder + '/*_' + profile + '.nc')]
             groupname = REgroup.search(pfilenames[0]).group(0)
             prefixes = [REprefix.match(x).group(0) for x in pfilenames]
-            # choose by prefix and load data
+            # choose by prefix
             selected_prefixes = h.choose_prefix(prefixes)
             # write to output fo pick up in next script
             for sp in selected_prefixes:
