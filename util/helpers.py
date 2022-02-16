@@ -41,3 +41,57 @@ def choose_prefix(prefixes):
         elif 'R' in prefixes:
             pfx.append('R')
     return pfx
+
+def pack_objects(measurements):
+    # given an object measurements with keys==variable names (temp, temp_qc, pres...) and values equal to depth-ordered lists of the corresponding data,
+    # return a depth-ordered list of objects with the appropriate keys.
+
+    key_mapping = {
+        "PRES": "pres",
+        "TEMP": "temp",
+        "PSAL": "psal",
+        "CNDX": "cndx",
+        "DOXY": "doxy",
+        "CHLA": "chla",
+        "CDOM": "cdom",
+        "NITRATE": "nitrate",
+        "BBP700": "bbp700",
+        "DOWN_IRRADIANCE412": "down_irradiance412",
+        "DOWN_IRRADIANCE442": "down_irradiance442",
+        "DOWN_IRRADIANCE490": "down_irradiance490",
+        "DOWNWELLING_PAR": "downwelling_par",
+        "PRES_QC": "pres_qc",
+        "TEMP_QC": "temp_qc",
+        "PSAL_QC": "psal_qc",
+        "CNDX_QC": "cndx_qc",
+        "DOXY_QC": "doxy_qc",
+        "CHLA_QC": "chla_qc",
+        "CDOM_QC": "cdom_qc",
+        "NITRATE_QC": "nitrate_qc",
+        "BBP700_QC": "bbp700_qc",
+        "DOWN_IRRADIANCE412_QC": "down_irradiance412_qc",
+        "DOWN_IRRADIANCE442_QC": "down_irradiance442_qc",
+        "DOWN_IRRADIANCE490_QC": "down_irradiance490_qc",
+        "DOWNWELLING_PAR_QC": "downwelling_par_qc"
+    }
+
+    ## sanity checks
+    if "PRES" not in measurements.keys():
+        print('error: measurements objects must have a PRES key.')
+        return None
+    nLevels = len(measurements['PRES'])
+    for var in measurements.keys():
+        if len(measurements[var]) != nLevels:
+            print('error: measurements', var, 'doesnt have the same number of levels as the provided PRES entry')
+            return None
+        if var[-3:] != '_QC' and var+'_QC' not in measurements.keys():
+            print('error: measurements', var, 'doesnt include a QC vector', var[-3:])
+
+    repack = []
+    for i in range(nLevels):
+        level = {}
+        for key in measurements.keys():
+            level[key_mapping[key]] = measurements[key][i]
+        repack.append(level)
+
+    return repack

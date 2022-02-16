@@ -8,7 +8,7 @@ REprefix = re.compile('^[A-Z]*')                 # SD, SR, BD, BR, D or R
 REgroup = re.compile('[0-9]*_[0-9]*D{0,1}\.nc')  # everything but the prefix
 
 dacs = os.listdir('/ifremer')
-filelist = open("profileSelection.txt", "w")
+filelist = open("/tmp/profileSelection.txt", "w")
 
 for dac in dacs:
     print('processing DAC: ', dac )
@@ -31,6 +31,6 @@ for dac in dacs:
             selected_prefixes = h.choose_prefix(prefixes)
             # write to output fo pick up in next script
             for sp in selected_prefixes:
-                filelist.write(folder + '/' + sp + groupname)
+                filelist.write(folder + '/' + sp + groupname + '\n')
 
 filelist.close()

@@ -3,12 +3,21 @@
 # assumes establishCollection.py was run first to create the collection with schema enforcement
 # assumes rsync populated content under /ifremer, same as choosefiles.py
 
-import sys, pymongo, xarray, re, datetime, difflib
+import sys, pymongo, xarray, re, datetime, difflib, pprint
+import util.helpers as h
 
 print('parsing', sys.argv[1])
 
 # input data and parameters
 data = xarray.open_dataset(sys.argv[1]) # xarray dataset
+print(data['PRES_ADJUSTED'].to_dict()['data'])
+print(data['PRES_ADJUSTED_QC'].to_dict()['data'])
+print(data['TEMP_ADJUSTED'].to_dict()['data'])
+print(data['TEMP_ADJUSTED_QC'].to_dict()['data'])
+print(data['PSAL_ADJUSTED'].to_dict()['data'])
+print(data['PSAL_ADJUSTED_QC'].to_dict()['data'])
+print(data['DOXY_ADJUSTED'].to_dict()['data'])
+print(data['DOXY_ADJUSTED_QC'].to_dict()['data'])
 basins = xarray.open_dataset('parameters/basinmask_01.nc')
 
 # helpful constants
@@ -17,12 +26,13 @@ REprefix = re.compile('^[A-Z]*')
 ## TODO: review after all keys are implemented
 mandatory_keys = ['LATITUDE', 'LONGITUDE', 'DATA_TYPE', 'JULD', 'DATE_UPDATE', 'CYCLE_NUMBER', 'PLATFORM_NUMBER']
 optional_keys = [ 'PI_NAME', 'DATA_CENTRE', 'DIRECTION', 'POSITION_QC', 'JULD_QC', 'PLATFORM_TYPE', 'POSITIONING_SYSTEM', 'VERTICAL_SAMPLING_SCHEME', 'WMO_INST_TYPE']
+measurement_keys = ["PRES","TEMP","PSAL","CNDX","DOXY","CHLA","CDOM","NITRATE","BBP700","DOWN_IRRADIANCE412","DOWN_IRRADIANCE442","DOWN_IRRADIANCE490","DOWNWELLING_PAR"]
 n_prof = data.dims['N_PROF']
 prefix = REprefix.search(sys.argv[1].split('/')[-1]).group(0)
 if prefix not in ['SD', 'SR', 'BD', 'BR', 'D', 'R']:
 	print('error: found unsupported file prefix', prefix)
 	sys.exit()
-	
+
 profiles = []
 for i in range(n_prof):
 	p = {}
@@ -66,6 +76,17 @@ for i in range(n_prof):
 	p['instrument'] = 'profiling_float'
 
     ## data: TODO
+	measurements = {}
+	for m in measurement_keys:
+		if m+'_ADJUSTED' in list(data.variables):
+			measurements[m] = data[m+'_ADJUSTED'].to_dict()['data'][i]
+		elif m in list(data.variables):
+			measurements[m] = data[m].to_dict()['data'][i]
+		if m+'_ADJUSTED_QC' in list(data.variables):
+			measurements[m+'_QC'] = [float(x) for x in data[m+'_ADJUSTED_QC'].to_dict()['data'][i]]
+		elif m+'_QC' in list(data.variables):
+			measurements[m+'_QC'] = [float(x) for x in data[m+'_QC'].to_dict()['data'][i]]
+	p['data'] = h.pack_objects(measurements)
 
     ## data_keys: TODO
 
@@ -145,4 +166,4 @@ for i in range(n_prof):
 
 	profiles.append(p)
 
-print(profiles)
+pprint.pprint(profiles)
