@@ -3,7 +3,7 @@
 # assumes establishCollection.py was run first to create the collection with schema enforcement
 # assumes rsync populated content under /ifremer, same as choosefiles.py
 
-import sys, pymongo, xarray, re, datetime, difflib, pprint
+import sys, pymongo, xarray, re, datetime, difflib, pprint, numpy
 import util.helpers as h
 
 print('parsing', sys.argv[1])
@@ -75,20 +75,26 @@ for i in range(n_prof):
     ## instrument TODO: check that this was what's intended forArgo
 	p['instrument'] = 'profiling_float'
 
-    ## data: TODO
+    ## data: TODO significant validation required
 	measurements = {}
 	for m in measurement_keys:
-		if m+'_ADJUSTED' in list(data.variables):
+		# pass along the adjusted values where available
+		# value and value_qc should both be present and both be adjusted or both not, mixing shouldn't be possible
+		if m+'_ADJUSTED' in list(data.variables) and m+'_ADJUSTED_QC' in list(data.variables):
 			measurements[m] = data[m+'_ADJUSTED'].to_dict()['data'][i]
-		elif m in list(data.variables):
-			measurements[m] = data[m].to_dict()['data'][i]
-		if m+'_ADJUSTED_QC' in list(data.variables):
 			measurements[m+'_QC'] = [float(x) for x in data[m+'_ADJUSTED_QC'].to_dict()['data'][i]]
-		elif m+'_QC' in list(data.variables):
+		elif m in list(data.variables) and m+'_QC' in list(data.variables):
+			measurements[m] = data[m].to_dict()['data'][i]
 			measurements[m+'_QC'] = [float(x) for x in data[m+'_QC'].to_dict()['data'][i]]
+		elif not set([m, m+'_QC', m+'_ADJUSTED', m+'_ADJUSTED_QC']).isdisjoint(list(data.variables)):
+			print('error: measurement', m, 'or its QC found in nc file without matching QC or measurement.')
 	p['data'] = h.pack_objects(measurements)
 
-    ## data_keys: TODO
+    ## data_keys: TODO computed independently of p['data']; tie dependence, or use as crosscheck?
+	p['data_keys'] = []
+	for meas in measurement_keys:
+		if (meas in list(data.variables) and numpy.any(data[meas].to_dict()['data'][i])) or (meas+'_ADJUSTED' in list(data.variables) and numpy.any(data[meas+'_ADJUSTED'].to_dict()['data'][i])):
+			p['data_keys'].append(h.argo_keymapping(meas))
 
     ## data_keys_source: TODO
 

@@ -42,9 +42,8 @@ def choose_prefix(prefixes):
             pfx.append('R')
     return pfx
 
-def pack_objects(measurements):
-    # given an object measurements with keys==variable names (temp, temp_qc, pres...) and values equal to depth-ordered lists of the corresponding data,
-    # return a depth-ordered list of objects with the appropriate keys.
+def argo_keymapping(nckey):
+    # argo netcdf measurement name -> argovis measurement name
 
     key_mapping = {
         "PRES": "pres",
@@ -75,6 +74,12 @@ def pack_objects(measurements):
         "DOWNWELLING_PAR_QC": "downwelling_par_qc"
     }
 
+    return key_mapping[nckey]
+
+def pack_objects(measurements):
+    # given an object measurements with keys==variable names (temp, temp_qc, pres...) and values equal to depth-ordered lists of the corresponding data,
+    # return a depth-ordered list of objects with the appropriate keys.
+
     ## sanity checks
     if "PRES" not in measurements.keys():
         print('error: measurements objects must have a PRES key.')
@@ -91,7 +96,7 @@ def pack_objects(measurements):
     for i in range(nLevels):
         level = {}
         for key in measurements.keys():
-            level[key_mapping[key]] = measurements[key][i]
+            level[argo_keymapping(key)] = measurements[key][i]
         repack.append(level)
 
     return repack
