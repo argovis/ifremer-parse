@@ -1,4 +1,5 @@
 import re, xarray, datetime
+from collections import OrderedDict
 
 def pickprof(filename):
     # identify the profile number from a filename
@@ -71,7 +72,7 @@ def argo_keymapping(nckey):
         "DOWNWELLING_PAR_QC": "downwelling_par_qc"
     }
 
-    return key_mapping[nckey]
+    return key_mapping[nckey.replace('_ADJUSTED', '')]
 
 def pack_objects(measurements):
     # given an object measurements with keys==variable names (temp, temp_qc, pres...) and values equal to depth-ordered lists of the corresponding data,
@@ -232,10 +233,65 @@ def compare_metadata(metadata):
 
     return True
 
-def extract_data(xzr, pidx=0):
-    # given an xarray object representing an Argo nc file,
-    # extract and return a dictionary representing the data of the pidx'th profile in that file
+def extract_data(ncfile, pidx=0):
+    # given the path ncfile to an argo nc file,
+    # extract and return a list of data names found in the pidx'th profile in that file,
+    # and a level-ordered list of lists of the data values, in the same order as the first list,
+    # ie: ['pres', 'pres_qc', 'temp', 'temp_qc'], [[0.0, 1, 23.4, 1], [1.5, 1, 20.1, 1], ....]
+    # return None if nonsense detected
 
-    data = {}
+    # some helpful facts and figures
+    xar = xarray.open_dataset(ncfile)
+    REprefix = re.compile('^[A-Z]*')  
+    prefix = REprefix.search(ncfile.split('/')[-1]).group(0)
 
-    return data
+    if prefix in ['D', 'R']:
+        # core profile
+        if 'DATA_MODE' not in list(xar.variables):
+            print('error: DATA_MODE not found.')
+            return None
+        DATA_MODE = xar['DATA_MODE'].to_dict()['data'][pidx].decode('UTF-8')
+        if DATA_MODE in ['A', 'D']:
+            # use adjusted data
+            if 'PRES_ADJUSTED' not in list(xar.variables):
+                print('error: no PRES_ADJUSTED found')
+                return None
+            ## translate the STATION_PARAMETERS into [<PAR>_ADJUSTED, <PAR>_ADJUSTED_QC, ...
+            data_sought = [f(x) for x in xar['STATION_PARAMETERS'].to_dict()['data'][pidx] for f in (lambda name: name.decode('UTF-8').strip()+'_ADJUSTED',lambda name: name.decode('UTF-8').strip()+'_ADJUSTED_QC')]
+        elif DATA_MODE == 'R':
+            # use unadjusted data
+            if 'PRES' not in list(xar.variables):
+                print('error: no PRES found')
+                return None
+            data_sought = [f(x) for x in xar['STATION_PARAMETERS'].to_dict()['data'][pidx] for f in (lambda name: name.decode('UTF-8').strip(),lambda name: name.decode('UTF-8').strip()+'_QC')]
+        else:
+            print('error: unexpected data mode detected:', DATA_MODE)
+        data_by_var = [xar[x].to_dict()['data'][pidx] for x in data_sought]
+        data_by_level = [list(x) for x in zip(*data_by_var)]
+        return [argo_keymapping(x) for x in data_sought], data_by_level
+
+    elif prefix in ['SD', 'SR']:
+        # BGC profile
+        if 'PARAMETER_DATA_MODE' not in list(xar.variables):
+            print('error: PARAMETER_DATA_MODE not found.')
+            return None
+        PARAMETER_DATA_MODE = [x.decode('UTF-8') for x in xar['PARAMETER_DATA_MODE'].to_dict()['data'][pidx]]
+        STATION_PARAMETERS = [x.decode('UTF-8').strip() for x in xar['STATION_PARAMETERS'].to_dict()['data'][pidx]]
+        data_sought = []
+        for var in zip(PARAMETER_DATA_MODE, STATION_PARAMETERS):
+            if var[0] in ['D', 'A']:
+                # use adjusted data
+                data_sought.extend([var[1]+'_ADJUSTED', var[1]+'_ADJUSTED_QC'])
+            elif var[0] == 'R':
+                # use unadjusted data
+                data_sought.extend([var[1],var[1]+'_QC'])
+            else:
+                print('error: unexpected data mode detected for', var[1])
+        data_by_var = [xar[x].to_dict()['data'][pidx] for x in data_sought]
+        data_by_level = [list(x) for x in zip(*data_by_var)]
+        return [argo_keymapping(x).replace('temp', 'temp_synth').replace('psal', 'psal_synth') for x in data_sought], data_by_level
+
+    else:
+        print('error: got unexpected prefix when extracting data lists:', prefix)
+
+    xar.close()

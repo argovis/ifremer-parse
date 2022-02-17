@@ -37,12 +37,14 @@ print('parsing', sys.argv[1:])
 # look for mandatory and optional keys, complain appropriately
 
 # extract metadata for each file and make sure it's consistent between all files being merged
-profiles = [h.extract_metadata(x) for x in sys.argv[1:]]
-if not h.compare_metadata(profiles):
+metadata = [h.extract_metadata(x) for x in sys.argv[1:]]
+if not h.compare_metadata(metadata):
 	print('error: files', sys.argv[1:], 'did not yield consistent metadata')
 
-# extract data variables for each file
-#data = [h.extract_data(x) for x in data]
+# extract data variables for each file separately
+separate_data = [h.extract_data(x) for x in sys.argv[1:]]
+print(separate_data[0])
+print(separate_data[1])
 
 # merge metadata into single object
 
