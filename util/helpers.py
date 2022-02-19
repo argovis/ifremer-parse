@@ -1,4 +1,4 @@
-import re, xarray, datetime
+import re, xarray, datetime, math
 from collections import OrderedDict
 
 def pickprof(filename):
@@ -141,7 +141,7 @@ def extract_metadata(ncfile, pidx=0):
         metadata['_id'] += 'D'
 
     ## basin
-    metadata['basin'] = basins['BASIN_TAG'].sel(LONGITUDE=LONGITUDE, LATITUDE=LATITUDE, method="nearest").to_dict()['data']
+    metadata['basin'] = int(basins['BASIN_TAG'].sel(LONGITUDE=LONGITUDE, LATITUDE=LATITUDE, method="nearest").to_dict()['data'])
 
     ## data_type
     metadata['data_type'] = 'oceanicProfile'
@@ -156,9 +156,9 @@ def extract_metadata(ncfile, pidx=0):
 
     ## source TODO: what about argo_deep?
     if prefix in ['R', 'D']:
-        metadata['source'] = ['argo_core']
+        metadata['source'] = 'argo_core'
     elif prefix in ['SR', 'SD']:
-        metadata['source'] = ['argo_bgc'] # TODO check if this is the intended interpretation
+        metadata['source'] = 'argo_bgc' # TODO check if this is the intended interpretation
 
     ## data_center
     if('DATA_CENTRE') in variables:
@@ -235,9 +235,10 @@ def compare_metadata(metadata):
 
 def extract_data(ncfile, pidx=0):
     # given the path ncfile to an argo nc file,
-    # extract and return a list of data names found in the pidx'th profile in that file,
-    # and a level-ordered list of lists of the data values, in the same order as the first list,
-    # ie: ['pres', 'pres_qc', 'temp', 'temp_qc'], [[0.0, 1, 23.4, 1], [1.5, 1, 20.1, 1], ....]
+    # extract and return an object with:
+    # data_keys: list of data names found in the pidx'th profile in that file,
+    # data: a level-ordered list of lists of the data values, in the same order as the first list,
+    # ie: {data_keys: ['pres', 'pres_qc', 'temp', 'temp_qc'], data: [[0.0, 1, 23.4, 1], [1.5, 1, 20.1, 1], ....]}
     # return None if nonsense detected
 
     # some helpful facts and figures
@@ -267,8 +268,9 @@ def extract_data(ncfile, pidx=0):
         else:
             print('error: unexpected data mode detected:', DATA_MODE)
         data_by_var = [xar[x].to_dict()['data'][pidx] for x in data_sought]
-        data_by_level = [list(x) for x in zip(*data_by_var)]
-        return [argo_keymapping(x) for x in data_sought], data_by_level
+        argokeys = [argo_keymapping(x) for x in data_sought]
+        data_by_level = filter(lambda level: isnulllevel(level, argokeys),[list(x) for x in zip(*data_by_var)])
+        return {"data_keys": argokeys, "data": data_by_level}
 
     elif prefix in ['SD', 'SR']:
         # BGC profile
@@ -288,10 +290,93 @@ def extract_data(ncfile, pidx=0):
             else:
                 print('error: unexpected data mode detected for', var[1])
         data_by_var = [xar[x].to_dict()['data'][pidx] for x in data_sought]
-        data_by_level = [list(x) for x in zip(*data_by_var)]
-        return [argo_keymapping(x).replace('temp', 'temp_synth').replace('psal', 'psal_synth') for x in data_sought], data_by_level
+        argokeys = [argo_keymapping(x).replace('temp', 'temp_synth').replace('psal', 'psal_synth') for x in data_sought]
+        data_by_level = filter(lambda level: isnulllevel(level, argokeys),[list(x) for x in zip(*data_by_var)])
+        return {"data_keys": argokeys, "data": data_by_level}
 
     else:
         print('error: got unexpected prefix when extracting data lists:', prefix)
+        return None
 
     xar.close()
+
+def isnulllevel(level, data_labels):
+    # given a list of values representing measurements and qc for a level,
+    # and a list indicating the names of those variables,
+    # return true if there is any non-null measurement of any non-qc value besides pressure.
+
+    for i, key in enumerate(data_labels):
+        if '_qc' not in key and 'pres' not in key and not math.isnan(level[i]) and not level[i] is None:
+            return True
+
+    return False
+
+def merge_metadata(md):
+    # given a list md of metadata objects extracted from seaprate nc files from the same platform and cycle,
+    # return a single metadata object that sensibly combines the two.
+    # assumes consistency check has already been passed
+
+    metadata = {}
+
+    mandatory_unique_keys = ['_id', 'platform_wmo_number', 'cycle_number', 'basin', 'data_type', 'geolocation', 'instrument', 'timestamp', 'date_updated_argovis', 'fleetmonitoring', 'oceanops'] # yes, 'date_updated_argovis' will be different between the core and synthetic file for a given profile by a few ms, but we intentionally only keep one as this difference isn't meaningful
+    for key in mandatory_unique_keys:
+        metadata[key] = md[0][key]
+
+    optional_unique_keys = ['profile_direction', 'doi', 'data_center', 'pi_name', 'country', 'geolocation_argoqc', 'timestamp_argoqc', 'platform_type', 'positioning_system', 'vertical_sampling_scheme', 'wmo_inst_type']
+    for key in optional_unique_keys:
+        for m in md:
+            if key in m:
+                metadata[key] = m[key]
+                break 
+
+    mandatory_multivalue_keys = ['source', 'source_url', 'date_updated_source']
+    for key in mandatory_multivalue_keys:
+        metadata[key] = []
+        for m in md:
+            metadata[key].append(m[key])
+
+    return metadata
+
+def merge_data(data_list):
+    # given a list of data objects each as returned by extract_data,
+    # return a single data object merged into a single pressure axis.
+    # all levels from all input objects should be present, with None for data not reported on that level.
+
+    # determine complete set of measurement keys
+    measurements = set([])
+    for d in data_list:
+        measurements.update(d['data_keys'])
+    measurements = list(measurements)
+    measurements.sort()
+    
+    data = {}
+    for d in data_list:
+        keys = d['data_keys']
+        for level in d['data']:
+            p = level[keys.index('pres')]
+            if p not in data:
+                data[p] = [None]*len(measurements)
+            for k in keys:
+                data[p][measurements.index(k)] = level[keys.index(k)]
+    d = [data[k] for k in sorted(data.keys())]
+
+    return {"data_keys": measurements, "data": [ [cleanup(meas) for meas in level] for level in d]}
+
+def cleanup(meas):
+    # given a measurement, return the measurement after some generic cleanup
+
+    if meas is None:
+        return meas
+
+    # qc codes come in as bytes, should be ints
+    try:
+        ducktype = meas.decode('UTF-8')
+        return int(meas)
+    except:
+        pass
+
+    # use None as missing fill
+    if math.isnan(meas):
+        return None        
+
+    return meas

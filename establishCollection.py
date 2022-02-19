@@ -49,7 +49,7 @@ profileSchema = {"$jsonSchema":{
     "data": {
         "bsonType": "array",
         "items": {
-            "bsonType": "object"
+            "bsonType": "array"
         }
     },
     "data_keys": {
@@ -71,7 +71,10 @@ profileSchema = {"$jsonSchema":{
         }
     },
     "source_url": {
-        "bsonType": "string"
+        "bsonType": "array",
+        "items": {
+            "bsonType": "string"
+        }
     },
     "timestamp": {
         "bsonType": "date"
@@ -80,13 +83,13 @@ profileSchema = {"$jsonSchema":{
         "bsonType": "date"
     },
     "date_updated_source": {
-        "bsonType": "date"
-    },
-    "pi_name": {
         "bsonType": "array",
         "items": {
-            "bsonType": "string"
+            "bsonType": "date"
         }
+    },
+    "pi_name": {
+        "bsonType": "string",
     },
     "country": {
         "bsonType": "string"
