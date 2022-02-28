@@ -30,8 +30,9 @@ for dac in dacs:
             # choose by prefix
             selected_prefixes = h.choose_prefix(prefixes)
             # write to output fo pick up in next script
-            for sp in selected_prefixes:
-                filelist.write(folder + '/' + sp + groupname + ' ')
-            filelist.write('\n')
+            if len(selected_prefixes)>0:
+                for sp in selected_prefixes:
+                    filelist.write(folder + '/' + sp + groupname + ' ')
+                filelist.write('\n')
 
 filelist.close()

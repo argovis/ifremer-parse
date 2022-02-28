@@ -1,5 +1,5 @@
 import re, xarray, datetime, math
-from collections import OrderedDict
+from geopy import distance
 
 def pickprof(filename):
     # identify the profile number from a filename
@@ -72,7 +72,13 @@ def argo_keymapping(nckey):
         "DOWNWELLING_PAR_QC": "downwelling_par_qc"
     }
 
-    return key_mapping[nckey.replace('_ADJUSTED', '')]
+    try:
+        argoname = key_mapping[nckey.replace('_ADJUSTED', '')]
+    except:
+        print('warning: unexpected variable found in station_parameters:', nckey)
+        argoname = nckey.replace('_ADJUSTED', '').lower()
+
+    return argoname
 
 def pack_objects(measurements):
     # given an object measurements with keys==variable names (temp, temp_qc, pres...) and values equal to depth-ordered lists of the corresponding data,
@@ -118,7 +124,6 @@ def extract_metadata(ncfile, pidx=0):
     # some helpful facts and figures
     metadata = {}
     xar = xarray.open_dataset(ncfile)
-    basins = xarray.open_dataset('parameters/basinmask_01.nc')
     REprefix = re.compile('^[A-Z]*')  
     prefix = REprefix.search(ncfile.split('/')[-1]).group(0)
     variables = list(xar.variables)
@@ -141,7 +146,7 @@ def extract_metadata(ncfile, pidx=0):
         metadata['_id'] += 'D'
 
     ## basin
-    metadata['basin'] = int(basins['BASIN_TAG'].sel(LONGITUDE=LONGITUDE, LATITUDE=LATITUDE, method="nearest").to_dict()['data'])
+    metadata['basin'] = find_basin(LONGITUDE, LATITUDE)
 
     ## data_type
     metadata['data_type'] = 'oceanicProfile'
@@ -213,8 +218,39 @@ def extract_metadata(ncfile, pidx=0):
       metadata['wmo_inst_type'] = xar['WMO_INST_TYPE'].to_dict()['data'][pidx].decode('UTF-8').strip()
 
     xar.close()
-    basins.close()
     return metadata
+
+def find_basin(lon, lat):
+    # for a given lon, lat,
+    # identify the basin from the lookup table.
+    # choose the nearest non-nan grid point.
+
+    gridspacing = 0.5
+    basins = xarray.open_dataset('parameters/basinmask_01.nc')
+
+    basin = basins['BASIN_TAG'].sel(LONGITUDE=lon, LATITUDE=lat, method="nearest").to_dict()['data']
+    if math.isnan(basin):
+        # nearest point was on land - find the nearest non nan instead.
+        lonplus = math.ceil(lon / gridspacing)*gridspacing
+        lonminus = math.floor(lon / gridspacing)*gridspacing
+        latplus = math.ceil(lat / gridspacing)*gridspacing
+        latminus = math.floor(lat / gridspacing)*gridspacing
+        grids = [(basins['BASIN_TAG'].sel(LONGITUDE=lonminus, LATITUDE=latminus, method="nearest").to_dict()['data'], distance.distance((lat, lon), (latminus, lonminus)).miles),
+                 (basins['BASIN_TAG'].sel(LONGITUDE=lonminus, LATITUDE=latplus, method="nearest").to_dict()['data'], distance.distance((lat, lon), (latplus, lonminus)).miles),
+                 (basins['BASIN_TAG'].sel(LONGITUDE=lonplus, LATITUDE=latplus, method="nearest").to_dict()['data'], distance.distance((lat, lon), (latplus, lonplus)).miles),
+                 (basins['BASIN_TAG'].sel(LONGITUDE=lonplus, LATITUDE=latminus, method="nearest").to_dict()['data'], distance.distance((lat, lon), (latminus, lonplus)).miles)]
+
+        grids = [x for x in grids if not math.isnan(x[0])]
+        if len(grids) == 0:
+            # all points on land
+            print('warning: all surrounding basin grid points are NaN')
+            basin = -1
+        else:
+            grids.sort(key=lambda tup: tup[1])
+            basin = grids[0][0]
+    basins.close()
+    return int(basin)
+
 
 def compare_metadata(metadata):
     # given a list of metadata objects as returned by extract_metadata,
