@@ -12,7 +12,7 @@ db.create_collection("profilesx")
 
 profileSchema = {"$jsonSchema":{
   "bsonType": "object",
-  "required": ["_id", "basin", "data_type", "geolocation", "source", "timestamp", "date_updated_argovis", "date_updated_source", "cycle_number", "platform_wmo_number"],
+  "required": ["_id", "basin", "data_type", "geolocation", "timestamp", "date_updated_argovis", "source_info", "cycle_number", "platform_wmo_number"],
   "properties": {
     "_id": {
         "bsonType": "string"
@@ -58,38 +58,17 @@ profileSchema = {"$jsonSchema":{
             "bsonType": "string"
         }
     },
-    "data_keys_source": {
-        "bsonType": "array",
-        "items": {
-            "bsonType": "string"
-        }
-    },
-    "source": {
-        "bsonType": "array",
-        "items": {
-            "bsonType": "string"
-        }
-    },
-    "source_url": {
-        "bsonType": "array",
-        "items": {
-            "bsonType": "string"
-        }
-    },
     "timestamp": {
         "bsonType": "date"
     },
     "date_updated_argovis": {
         "bsonType": "date"
     },
-    "date_updated_source": {
+    "pi_name": {
         "bsonType": "array",
         "items": {
-            "bsonType": "date"
+            "bsonType": "string"
         }
-    },
-    "pi_name": {
-        "bsonType": "string",
     },
     "country": {
         "bsonType": "string"
@@ -99,6 +78,33 @@ profileSchema = {"$jsonSchema":{
     },
     "profile_direction": {
         "bsonType": "string"
+    },
+    "source_info": {
+        "bsonType": "array",
+        "items": {
+            "bsonType": "object",
+            "required": ["source", "date_updated_source"],
+            "properties": {
+                "data_keys_source": {
+                    "bsonType": "array",
+                    "items": {
+                        "bsonType": "string"
+                    }
+                },
+                "source": {
+                    "bsonType": "array",
+                    "items": {
+                        "bsonType": "string"
+                    }
+                },
+                "source_url": {
+                    "bsonType": "string",
+                },
+                "date_updated_source": {
+                    "bsonType": "date",
+                }
+            }
+        }
     },
     # argo-specific below this line
     "geolocation_argoqc": {
@@ -117,10 +123,7 @@ profileSchema = {"$jsonSchema":{
         "bsonType": "string"
     },
     "data_keys_mode": {
-        "bsonType": "array",
-        "items": {
-            "bsonType": "string"
-        }
+        "bsonType": "object"
     },
     "platform_wmo_number": {
         "bsonType": "int"

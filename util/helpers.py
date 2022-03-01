@@ -159,18 +159,27 @@ def extract_metadata(ncfile, pidx=0):
     ## instrument
     metadata['instrument'] = 'profiling_float'
 
-    ## source TODO: what about argo_deep?
+    ## source_info
+    metadata['source_info'] = [{}]
+
+    ### source_info.source TODO: what about argo_deep?
     if prefix in ['R', 'D']:
-        metadata['source'] = 'argo_core'
+        metadata['source_info'][0]['source'] = ['argo_core']
     elif prefix in ['SR', 'SD']:
-        metadata['source'] = 'argo_bgc' # TODO check if this is the intended interpretation
+        metadata['source_info'][0]['source'] = ['argo_bgc'] # TODO check if this is the intended interpretation
+
+    ### source_info.source_url
+    metadata['source_info'][0]['source_url'] = 'ftp://ftp.ifremer.fr/ifremer/argo/dac/' + ncfile[9:]
+
+    ### source_info.date_updated_source
+    metadata['source_info'][0]['date_updated_source'] = datetime.datetime.strptime(xar['DATE_UPDATE'].to_dict()['data'].decode('UTF-8'),'%Y%m%d%H%M%S')
+
+    ### source_info.data_keys_source
+    metadata['source_info'][0]['data_keys_source'] = [key.decode('UTF-8').strip() for key in xar['STATION_PARAMETERS'].to_dict()['data'][pidx]]
 
     ## data_center
     if('DATA_CENTRE') in variables:
       metadata['data_center'] = xar['DATA_CENTRE'].to_dict()['data'][pidx].decode('UTF-8')
-
-    ## source_url
-    metadata['source_url'] = 'ftp://ftp.ifremer.fr/ifremer/argo/dac/' + ncfile[9:]
 
     ## timestamp: TODO make sure this doesn't get mangled on insertion
     metadata['timestamp'] = xar['JULD'].to_dict()['data'][pidx]
@@ -178,12 +187,9 @@ def extract_metadata(ncfile, pidx=0):
     ## date_updated_argovis
     metadata['date_updated_argovis'] = datetime.datetime.now()
 
-    ## date_updated_source
-    metadata['date_updated_source'] = datetime.datetime.strptime(xar['DATE_UPDATE'].to_dict()['data'].decode('UTF-8'),'%Y%m%d%H%M%S')
-
     ## pi_name
     if('PI_NAME') in variables:
-        metadata['pi_name'] = xar['PI_NAME'].to_dict()['data'][pidx].decode('UTF-8').strip()
+        metadata['pi_name'] = xar['PI_NAME'].to_dict()['data'][pidx].decode('UTF-8').strip().split(',')
 
     ## country: TODO
 
@@ -305,8 +311,9 @@ def extract_data(ncfile, pidx=0):
             print('error: unexpected data mode detected:', DATA_MODE)
         data_by_var = [xar[x].to_dict()['data'][pidx] for x in data_sought]
         argokeys = [argo_keymapping(x) for x in data_sought]
+        data_keys_mode = {k: DATA_MODE for k in argokeys if '_qc' not in k} # ie assign the global mode to all non qc variables
         data_by_level = filter(lambda level: isnulllevel(level, argokeys),[list(x) for x in zip(*data_by_var)])
-        return {"data_keys": argokeys, "data": data_by_level}
+        return {"data_keys": argokeys, "data": data_by_level, "data_keys_mode": data_keys_mode}
 
     elif prefix in ['SD', 'SR']:
         # BGC profile
@@ -316,19 +323,22 @@ def extract_data(ncfile, pidx=0):
         PARAMETER_DATA_MODE = [x.decode('UTF-8') for x in xar['PARAMETER_DATA_MODE'].to_dict()['data'][pidx]]
         STATION_PARAMETERS = [x.decode('UTF-8').strip() for x in xar['STATION_PARAMETERS'].to_dict()['data'][pidx]]
         data_sought = []
+        data_keys_mode = {}
         for var in zip(PARAMETER_DATA_MODE, STATION_PARAMETERS):
             if var[0] in ['D', 'A']:
                 # use adjusted data
                 data_sought.extend([var[1]+'_ADJUSTED', var[1]+'_ADJUSTED_QC'])
+                data_keys_mode[argo_keymapping(var[1]).replace('temp', 'temp_sfile').replace('psal', 'psal_sfile')] = var[0]
             elif var[0] == 'R':
                 # use unadjusted data
                 data_sought.extend([var[1],var[1]+'_QC'])
+                data_keys_mode[argo_keymapping(var[1]).replace('temp', 'temp_sfile').replace('psal', 'psal_sfile')] = var[0]
             else:
                 print('error: unexpected data mode detected for', var[1])
         data_by_var = [xar[x].to_dict()['data'][pidx] for x in data_sought]
-        argokeys = [argo_keymapping(x).replace('temp', 'temp_synth').replace('psal', 'psal_synth') for x in data_sought]
-        data_by_level = filter(lambda level: isnulllevel(level, argokeys),[list(x) for x in zip(*data_by_var)])
-        return {"data_keys": argokeys, "data": data_by_level}
+        argokeys = [argo_keymapping(x).replace('temp', 'temp_sfile').replace('psal', 'psal_sfile') for x in data_sought]
+        data_by_level = filter(lambda level: isnulllevel(level, argokeys),[list(x) for x in zip(*data_by_var)]) 
+        return {"data_keys": argokeys, "data": data_by_level, "data_keys_mode": data_keys_mode}
 
     else:
         print('error: got unexpected prefix when extracting data lists:', prefix)
@@ -365,11 +375,11 @@ def merge_metadata(md):
                 metadata[key] = m[key]
                 break 
 
-    mandatory_multivalue_keys = ['source', 'source_url', 'date_updated_source']
+    mandatory_multivalue_keys = ['source_info']
     for key in mandatory_multivalue_keys:
         metadata[key] = []
         for m in md:
-            metadata[key].append(m[key])
+            metadata[key].extend(m[key])
 
     return metadata
 
@@ -379,24 +389,41 @@ def merge_data(data_list):
     # all levels from all input objects should be present, with None for data not reported on that level.
 
     # determine complete set of measurement keys
-    measurements = set([])
+    data_keys = set([])
     for d in data_list:
-        measurements.update(d['data_keys'])
-    measurements = list(measurements)
-    measurements.sort()
-    
+        data_keys.update(d['data_keys'])
+    data_keys = list(data_keys)
+    data_keys.sort()
+
+    # merge data
     data = {}
     for d in data_list:
         keys = d['data_keys']
         for level in d['data']:
             p = level[keys.index('pres')]
-            if p not in data:
-                data[p] = [None]*len(measurements)
+            if p not in data: # ie data is numerically keyed by pressure at this point
+                data[p] = [None]*len(data_keys)
             for k in keys:
-                data[p][measurements.index(k)] = level[keys.index(k)]
-    d = [data[k] for k in sorted(data.keys())]
+                data[p][data_keys.index(k)] = level[keys.index(k)]
+    d = [data[k] for k in sorted(data.keys())] # list of level objects
 
-    return {"data_keys": measurements, "data": [ [cleanup(meas) for meas in level] for level in d]}
+    # merge data modes
+    ## the only possible overlap here should be 'pres'; if there are different data modes between the core and bgc file, use the lowest confidence: R beats A beats D
+    data_keys_mode = {}
+    pres_mode = []
+    for dl in data_list:
+        data_keys_mode = {**data_keys_mode, **dl['data_keys_mode']}
+        pres_mode.extend(dl['data_keys_mode']['pres'])
+    if 'R' in pres_mode:
+        data_keys_mode['pres'] = 'R'
+    elif 'A' in pres_mode:
+        data_keys_mode['pres'] = 'A'
+    elif 'D' in pres_mode:
+        data_keys_mode['pres'] = 'D'
+    else:
+        print('error: no sensible data mode found for pres')
+    
+    return {"data_keys": data_keys, "data_keys_mode": data_keys_mode, "data": [ [cleanup(meas) for meas in level] for level in d]}
 
 def cleanup(meas):
     # given a measurement, return the measurement after some generic cleanup
@@ -415,4 +442,9 @@ def cleanup(meas):
     if math.isnan(meas):
         return None        
 
-    return meas
+    return round(meas,6) # at most 6 significant decimal places
+
+
+
+
+
