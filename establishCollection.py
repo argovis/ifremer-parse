@@ -7,8 +7,8 @@ import sys
 client = MongoClient('mongodb://database/argo')
 db = client.argo
 
-db.profilesdev.drop()
-db.create_collection("profilesdev")
+db.profs.drop()
+db.create_collection("profs")
 
 def combineSchema(parent, ext):
     # combine a parent and an extension dict into a single dict
@@ -165,7 +165,7 @@ argoSchemaExtension = {
 
 goshipSchemaExtension = {
     "bsonType": "object",
-    "required": [],
+    "required": ['expocode'],
     "properties": {
         "expocode": {"bsonType": "string"},
         "woce_lines": {
@@ -183,4 +183,4 @@ goshipSchemaExtension = {
 argoProfile = combineSchema(pointSchema, argoSchemaExtension)
 goshipProfile = combineSchema(pointSchema, goshipSchemaExtension)
 
-db.command('collMod','profilesdev', validator={"$jsonSchema": {"oneOf": [argoProfile, goshipProfile]}}, validationLevel='strict')
+db.command('collMod','profs', validator={"$jsonSchema": {"oneOf": [argoProfile, goshipProfile]}}, validationLevel='strict')

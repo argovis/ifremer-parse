@@ -279,7 +279,8 @@ def extract_data(ncfile, pidx=0):
     # given the path ncfile to an argo nc file,
     # extract and return an object with:
     # data_keys: list of data names found in the pidx'th profile in that file,
-    # data: a level-ordered list of lists of the data values, in the same order as the first list,
+    # data: a level-ordered list of lists of the data values, in the same order as data_keys,
+    # data_keys_mode: a dict keyed by non-QC variables found in data_keys, with values of 'D'elayed, 'A'djusted, or 'R'ealtime indicating the mode of each variable
     # ie: {data_keys: ['pres', 'pres_qc', 'temp', 'temp_qc'], data: [[0.0, 1, 23.4, 1], [1.5, 1, 20.1, 1], ....]}
     # return None if nonsense detected
 
@@ -312,7 +313,8 @@ def extract_data(ncfile, pidx=0):
         data_by_var = [xar[x].to_dict()['data'][pidx] for x in data_sought]
         argokeys = [argo_keymapping(x) for x in data_sought]
         data_keys_mode = {k: DATA_MODE for k in argokeys if '_qc' not in k} # ie assign the global mode to all non qc variables
-        data_by_level = filter(lambda level: isnulllevel(level, argokeys),[list(x) for x in zip(*data_by_var)])
+        data_by_level = [list(x) for x in zip(*data_by_var)]
+        data_by_level = [x for x in data_by_level if not math.isnan(x[argokeys.index('pres')])] # ie each level must have a pressure measurement
         return {"data_keys": argokeys, "data": data_by_level, "data_keys_mode": data_keys_mode}
 
     elif prefix in ['SD', 'SR']:
@@ -337,7 +339,8 @@ def extract_data(ncfile, pidx=0):
                 print('error: unexpected data mode detected for', var[1])
         data_by_var = [xar[x].to_dict()['data'][pidx] for x in data_sought]
         argokeys = [argo_keymapping(x).replace('temp', 'temp_sfile').replace('psal', 'psal_sfile') for x in data_sought]
-        data_by_level = filter(lambda level: isnulllevel(level, argokeys),[list(x) for x in zip(*data_by_var)]) 
+        data_by_level = [list(x) for x in zip(*data_by_var)]
+        data_by_level = [x for x in data_by_level if not math.isnan(x[argokeys.index('pres')])] 
         return {"data_keys": argokeys, "data": data_by_level, "data_keys_mode": data_keys_mode}
 
     else:
@@ -345,17 +348,6 @@ def extract_data(ncfile, pidx=0):
         return None
 
     xar.close()
-
-def isnulllevel(level, data_labels):
-    # given a list of values representing measurements and qc for a level,
-    # and a list indicating the names of those variables,
-    # return true if there is any non-null measurement of any non-qc value besides pressure.
-
-    for i, key in enumerate(data_labels):
-        if '_qc' not in key and 'pres' not in key and not math.isnan(level[i]) and not level[i] is None:
-            return True
-
-    return False
 
 def merge_metadata(md):
     # given a list md of metadata objects extracted from seaprate nc files from the same platform and cycle,

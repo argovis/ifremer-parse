@@ -34,6 +34,8 @@ profile = {**metadata, **data}
 
 # write to mongo
 try:
-	db.profilesx.insert_one(profile)
-except:
+	db.profs.insert_one(profile)
+except BaseException as err:
 	print('error: db write failure')
+	print(err)
+	print(profile)
