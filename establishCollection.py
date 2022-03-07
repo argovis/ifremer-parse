@@ -1,15 +1,29 @@
+# usage: python establishCollection.py
+# creates an empty, unindexed collection in the argo db with schema validation enforcement
+
 from pymongo import MongoClient
 import sys
 
 client = MongoClient('mongodb://database/argo')
 db = client.argo
 
-db.profilesx.drop()
-db.create_collection("profilesx")
+db.profs.drop()
+db.create_collection("profs")
 
-profileSchema = {"$jsonSchema":{
+def combineSchema(parent, ext):
+    # combine a parent and an extension dict into a single dict
+    # ext keys clobber collisions, with the exception of "required", which should be merged.
+
+    required = []
+    required.extend(parent['required'])
+    required.extend(ext['required'])
+    schema = {**parent, **ext}
+    schema['required'] = required
+    return schema 
+
+pointSchema = {
   "bsonType": "object",
-  "required": ["_id", "basin", "data_type", "geolocation", "source", "timestamp", "date_updated_argovis", "date_updated_source", "cycle_number", "platform_wmo_number"],
+  "required": ["_id", "basin", "data_type", "geolocation", "timestamp", "date_updated_argovis", "source_info"],
   "properties": {
     "_id": {
         "bsonType": "string"
@@ -46,7 +60,7 @@ profileSchema = {"$jsonSchema":{
     "data": {
         "bsonType": "array",
         "items": {
-            "bsonType": "object"
+            "bsonType": "array"
         }
     },
     "data_keys": {
@@ -55,28 +69,10 @@ profileSchema = {"$jsonSchema":{
             "bsonType": "string"
         }
     },
-    "data_keys_source": {
-        "bsonType": "array",
-        "items": {
-            "bsonType": "string"
-        }
-    },
-    "source": {
-        "bsonType": "array",
-        "items": {
-            "bsonType": "string"
-        }
-    },
-    "source_url": {
-        "bsonType": "string"
-    },
     "timestamp": {
         "bsonType": "date"
     },
     "date_updated_argovis": {
-        "bsonType": "date"
-    },
-    "date_updated_source": {
         "bsonType": "date"
     },
     "pi_name": {
@@ -91,10 +87,46 @@ profileSchema = {"$jsonSchema":{
     "data_center": {
         "bsonType": "string"
     },
+    "source_info": {
+        "bsonType": "array",
+        "items": {
+            "bsonType": "object",
+            "required": ["source", "date_updated_source"],
+            "properties": {
+                "data_keys_source": {
+                    "bsonType": "array",
+                    "items": {
+                        "bsonType": "string"
+                    }
+                },
+                "source": {
+                    "bsonType": "array",
+                    "items": {
+                        "bsonType": "string"
+                    }
+                },
+                "source_url": {
+                    "bsonType": "string",
+                },
+                "date_updated_source": {
+                    "bsonType": "date",
+                }
+            }
+        }
+    }
+  },
+  "dependencies": {
+    "data": ["data_keys"]
+  }
+}
+
+argoSchemaExtension = {
+  "bsonType": "object",
+  "required": ["cycle_number", "platform_wmo_number"],
+  "properties": {
     "profile_direction": {
         "bsonType": "string"
     },
-    # argo-specific below this line
     "geolocation_argoqc": {
         "bsonType": "int"
     },
@@ -111,10 +143,7 @@ profileSchema = {"$jsonSchema":{
         "bsonType": "string"
     },
     "data_keys_mode": {
-        "bsonType": "array",
-        "items": {
-            "bsonType": "string"
-        }
+        "bsonType": "object"    
     },
     "platform_wmo_number": {
         "bsonType": "int"
@@ -131,10 +160,27 @@ profileSchema = {"$jsonSchema":{
     "wmo_inst_type": {
         "bsonType": "string"
     }
-  },
-  "dependencies": {
-    "data": ["data_keys"]
   }
-}}
+}
 
-db.command('collMod','profilesx', validator=profileSchema, validationLevel='strict')
+goshipSchemaExtension = {
+    "bsonType": "object",
+    "required": ['expocode'],
+    "properties": {
+        "expocode": {"bsonType": "string"},
+        "woce_lines": {
+            "bsonType": "array",
+            "items": {
+                "bsonType": "string"
+            }
+        },
+        "cchdo_cruise_id": {"bsonType": "int"},
+        "cast": {"bsonType": "int"},
+        "station": {"bsonType": "string"}
+    }
+}
+
+argoProfile = combineSchema(pointSchema, argoSchemaExtension)
+goshipProfile = combineSchema(pointSchema, goshipSchemaExtension)
+
+db.command('collMod','profs', validator={"$jsonSchema": {"oneOf": [argoProfile, goshipProfile]}}, validationLevel='strict')
