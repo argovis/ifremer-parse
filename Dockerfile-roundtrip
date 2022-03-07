@@ -7,4 +7,4 @@ RUN pip install pymongo wget fsspec xarray scipy geopy
 WORKDIR /app
 COPY . .
 RUN chown -R 1000660000 /app
-CMD python -u waterfall.py
+CMD python -u roundtrip.py
